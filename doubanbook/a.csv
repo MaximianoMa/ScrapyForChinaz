@@ -1,0 +1,65 @@
+ start_urls = ['https://top.chinaz.com/hangye/index_yule.html','https://top.chinaz.com/hangye/index_shopping', 'https://top.chinaz.com/hangye/index_gov',
+         'https://top.chinaz.com/hangye/index_zonghe', 'https://top.chinaz.com/hangye/index_jiaoyu', 'https://top.chinaz.com/hangye/index_qiye',
+         'https://top.chinaz.com/hangye/index_shenghuo', 'https://top.chinaz.com/hangye/index_wangluo', 'https://top.chinaz.com/hangye/index_tiyu',
+         'https://top.chinaz.com/hangye/index_yiliao', 'https://top.chinaz.com/hangye/index_jiaotonglvyou', 'https://top.chinaz.com/hangye/index_news']
+    # start = ['https://top.chinaz.com']
+
+
+import scrapy
+from doubanbook.items import CaoItem
+
+class CaoSpider(scrapy.Spider):
+    name = "cao"
+    allowed_domains = ['chinaz.com']
+    start_urls = ['https://top.chinaz.com/hangye/index_yule.html','https://top.chinaz.com/hangye/index_shopping', 'https://top.chinaz.com/hangye/index_gov',
+         'https://top.chinaz.com/hangye/index_zonghe', 'https://top.chinaz.com/hangye/index_jiaoyu', 'https://top.chinaz.com/hangye/index_qiye',
+         'https://top.chinaz.com/hangye/index_shenghuo', 'https://top.chinaz.com/hangye/index_wangluo', 'https://top.chinaz.com/hangye/index_tiyu',
+         'https://top.chinaz.com/hangye/index_yiliao', 'https://top.chinaz.com/hangye/index_jiaotonglvyou', 'https://top.chinaz.com/hangye/index_news']
+    # start = ['https://top.chinaz.com']
+
+    def parse(self, response):
+        # Process the current page
+        yield from self.parse_page(response)
+
+        # Select all pagination links. This does not include the 'Next' link.
+        pagination_links = response.xpath('//div[@class="ListPageWrap"]/a[@class]')
+
+        # Yield a request for each page found in the pagination
+        for link in pagination_links:
+            page_url = link.xpath('@href').extract_first()
+            if page_url:
+                # Complete the relative URL
+                full_url = response.urljoin(page_url)
+                yield scrapy.Request(full_url, callback=self.parse_page)
+
+        # Find the 'Next' page link and yield request if it exists
+        # Here we assume that the 'Next' link is the last one in the pagination section
+        next_page = response.xpath('//div[@class="ListPageWrap"]/a[@class and contains(text(), "Next") or contains(text(), ">")]/@href').extract_first()
+        if next_page:
+            next_page_url = response.urljoin(next_page)
+            yield scrapy.Request(next_page_url, callback=self.parse)
+
+
+    def parse_page(self, response):
+        for item in response.xpath('//div[@class="CentTxt"]'):
+            cao = CaoItem()
+            cao['url'] = response.url
+            cao['name'] = item.xpath('.//h3[@class="rightTxtHead"]/a/@title').extract_first()
+
+            if cao['name']:  # Proceed only if 'name' is found
+                # Extract link to the detailed page
+                link = item.xpath('.//h3[@class="rightTxtHead"]/a/@href').extract_first()
+                if link:
+                    link = response.urljoin(link)  # Construct the full URL
+                    request = scrapy.Request(link, callback=self.parse_details)
+                    request.meta['cao'] = cao  # Pass the partially filled item to the next parser
+                    yield request
+
+    def parse_details(self, response):
+        cao = response.meta['cao']
+
+        # Extract additional information from the details page
+        # For example:
+        cao['description'] = response.xpath('.//p[@class="webIntro"]/text()').extract_first()
+
+        yield cao
